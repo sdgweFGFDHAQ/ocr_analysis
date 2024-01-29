@@ -9,18 +9,25 @@
 linux
 """
 import argparse
-import base64
 import json
-import logging
 import os
-import pandas as pd
-import requests
+import logging
 
+import pandas as pd
+from paddleocr import PaddleOCR, draw_ocr, paddleocr
 from PIL import Image, ImageFilter, ImageEnhance
-from paddleocr import PaddleOCR
+import requests
+import numpy as np
+import jieba
+import unicodedata
 
 logging.disable(logging.DEBUG)
 pd.options.mode.chained_assignment = None
+# 设置对哪一批次数据进行处理
+batch_num = 2  # 从0开始，2表示第三批
+
+# 本地没有内存溢出问题，使用该变量
+breakpoint_index = 0  # 默认为0,程序中断后，从该索引重跑
 
 parser = argparse.ArgumentParser()
 # linux有内存溢出问题，使用该变量
@@ -32,16 +39,10 @@ breakpoint_index = args.bp_index
 mini_batch = args.mini_batch
 batch_num = args.batch_num
 
-# prefix_path = "/home/DI/zhouzx/code/ocr_analysis/main"
-# data = pd.read_csv(prefix_path + '/data_sets/ocr_null_10w' + str(batch_num) + '.csv')
-# save_path = prefix_path + '/data_sets/10w' + str(batch_num) + '_data_result.csv'
-prefix_path = ''
-data = pd.read_csv('ocr_null_10w' + str(batch_num) + '.csv')
-save_path = './temp/10w' + str(batch_num) + '_data_result.csv'
-re_url = "http://192.168.0.112:9091/imageprocess/signboard"
+prefix_path = "/home/DI/zhouzx/code/ocr_analysis/main"
+data = pd.read_csv(prefix_path + '/data_sets/ocr_null_10w' + str(batch_num) + '.csv')
+save_path = prefix_path + '/data_sets/10w' + str(batch_num) + '_data_result.csv'
 
-
-# re_url = "http://139.9.49.41:9091/imageprocess/signboard" 华为云公网
 
 def change_pic(name_st1):
     image = Image.open(name_st1)
@@ -51,7 +52,7 @@ def change_pic(name_st1):
     cropped_image.save(prefix_path + '/pic_ocr/picture.jpg')
 
 
-def format_url(row):
+def clean_f(row):
     url_list = []
     if str(row) == 'None':
         return url_list
@@ -66,17 +67,20 @@ def format_url(row):
     return url_list
 
 
-def preprocess_image(image):
-    s_image = image.filter(ImageFilter.UnsharpMask(radius=2, percent=100, threshold=3))
-    s_image = ImageEnhance.Color(s_image).enhance(1.2)
-    return s_image
-
-
-def ocr_word(image):
+def ocr_word(path):
     txts = []
     try:
+
+        image = Image.open(path)
+        s_image = image.filter(ImageFilter.UnsharpMask(radius=2, percent=100, threshold=3))
+        s_image = ImageEnhance.Color(s_image)
+        s_image = s_image.enhance(1.2)
+        s_image.save(r"pic_ocr/ruihua.jpg")
         ocr = PaddleOCR(use_angle_cls=True, lang="ch", use_gpu=False, cpu_threads=8)
-        result = ocr.ocr(image, cls=True)
+        img_path = r"pic_ocr/ruihua.jpg"
+        # 输出结果保存路径
+        result = ocr.ocr(img_path, cls=True)
+        # result = result[0]
         txts = [line[1][0] for line in result]
     except Exception as e:
         print('ocr_word() error!', e)
@@ -84,94 +88,72 @@ def ocr_word(image):
         return txts
 
 
-def recognition(image):
-    try:
-        with open(image, "rb") as image_file:
-            base64_data = base64.b64encode(image_file.read())
-        content = base64_data.decode()
-
-        headers = {
-            "User-Agent": "Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)",
-            "tenantId": "dtcj",
-            "traceId": "dtcj",
-            "content-type": "application/json"
-        }  # 请求头
-        payload = {
-            "base64Data": content
-        }
-
-        response = requests.post(re_url, headers=headers, json=payload)
-        if response.status_code == 200:
-            responsedata = response.json()
-            return responsedata['data']['resultdetaillist'][0]['class']
-        else:
-            return -1
-    except Exception as e:
-        return -1
-
-
-def process_image(url, photo_file, front_text, inside_text):
-    if url.split('//')[0] == 'https:' or url.split('//')[0] == 'http:':
-        image_url = url
-    else:
-        image_url = 'https://' + url
-    response = requests.get(image_url)
-    with open(photo_file, 'wb') as f:
-        f.write(response.content)
-    # 判断是否是店面照
-    is_storefront = recognition(photo_file)
-    # 切割水印
-    change_pic(photo_file)
-    image = Image.open(photo_file)
-    s_image = preprocess_image(image)
-    # 提取文本
-    if is_storefront == '店面照':
-        front_text += ocr_word(s_image)
-    else:
-        inside_text += ocr_word(s_image)
-    return front_text, inside_text
-
-
 def res_ssl(data):
     data['ocr_words'] = None
     data['id'] = data['id'].astype(str)
-
+    # colunm = data.columns.tolist()
+    # res=''
+    # for temp in colunm:
+    #     res += '"'
+    #     res += str(temp)
+    #     res += '",'
+    # res += '\n'
+    # f = open(save_path, 'a')
+    # f.write(res)
+    # f.close()
     print('breakpoint_index:', breakpoint_index)
     for i, row in data.iterrows():
-        # 控制ocr的batch，防止内存溢出过多
         if i < breakpoint_index:
             continue
         if i == breakpoint_index + mini_batch:
             break
         print('--index:{}--'.format(i))
-        front_text, inside_text = [], []
-        name_st = r'pic_ocr/picture.jpg'
-        # 清洗URL格式
-        if 'photos' in row.index:
-            row['photos'] = format_url(row['photos'])
-            if len(row['photos']) == 0:
+        data['filepath'][i] = clean_f(data['filepath'][i])
+        if len(data['filepath'][i]) == 0: continue
+        text = []
+        pic_url_list = data['filepath'][i]
+        for pici in pic_url_list:
+            try:
+                pic_name = pici.split('/')[-1]
+                if pici.split('//')[0] == 'https:' or pici.split('//')[0] == 'http:':
+                    image_url = pici
+                else:
+                    image_url = 'https://' + pici
+                # pic_name=re.sub(r"[^a-zA-Z0-9]", "", pic_name)
+                name_st = r'pic_ocr/picture.jpg'
+                # if not os.path.isfile(name_st):
+                r = requests.get(image_url)
+                with open(name_st, 'wb') as f:
+                    f.write(r.content)
+                change_pic(name_st)
+                text += ocr_word(name_st)
+            finally:
                 continue
-            for pici in row['photos']:
-                try:
-                    front_text, inside_text = process_image(pici, name_st, front_text, inside_text)
-                finally:
-                    continue
-        if 'filepath' in row.index:
-            row['filepath'] = format_url(row['filepath'])
-            if len(row['filepath']) == 0:
-                continue
-            for pici in row['filepath']:
-                try:
-                    front_text, inside_text = process_image(pici, name_st, front_text, inside_text)
-                finally:
-                    continue
-        row['ocr_storefront_words'] = ' '.join(front_text)
-        row['ocr_words'] = ' '.join(inside_text)
+        if len(text) == 0:
+            continue
+        row['ocr_words'] = ' '.join(text)
+        print(text)
+        # dic1=row.to_dict()
+        # data_new=pd.DataFrame(dic1)
+        # res=''
+        # for temp in data.iloc[i]:
+        #     res+='"'
+        #     res+=str(temp)
+        #     res+='",'
+        # res+='\n'
+        # f=open(save_path,'a')
+        # f.write(res)
+        # f.close()
 
         if os.path.exists(save_path) and os.path.getsize(save_path):
-            row.to_frame().transpose().to_csv(save_path, mode='a', header=False, index=False)
+            row.to_frame().transpose().to_csv(save_path,
+                                              mode='a',
+                                              header=False,
+                                              index=False)
         else:
-            row.to_frame().transpose().to_csv(save_path, mode='w', index=False)
+            row.to_frame().transpose().to_csv(save_path,
+                                              mode='w',
+                                              index=False)
 
     return data
 
