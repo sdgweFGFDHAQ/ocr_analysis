@@ -11,7 +11,7 @@ from clickhouse_sqlalchemy import select, make_session
 from sqlalchemy import create_engine, text
 import pandas as pd
 
-data_columns = ['id', 'address', 'appcode', 'last_visittime', 'name', 'filepath']
+data_columns = ['id', 'address', 'appcode', 'last_visittime', 'name', 'photos', 'filepath']
 
 conf = {
     'user': 'default',
@@ -64,7 +64,7 @@ if __name__ == '__main__':
         result = clickhouse_client.query_data_with_raw_sql(sql=sql)
         frame = pd.DataFrame(result, columns=data_columns)
         frame['id'] = frame['id'].astype(str)
-        frame.to_csv(prefix_path + '/ocr_null_10w' + str(i) + '.csv', index=False)
+        frame.to_csv(prefix_path + '/ocr_null_10w-' + str(i) + '.csv', index=False)
         print('查询数据量：{}'.format(frame.shape[0]))
     print("=====end======")
 

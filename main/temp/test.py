@@ -1,4 +1,5 @@
 import argparse
+import json
 import time
 import random
 
@@ -33,6 +34,28 @@ def main():
         count += 1
 
 
+def format_url_for_photos(txt):
+    url_list = []
+    row = txt.replace('\\"', '\'')
+    data = json.loads(row)
+    print(data)
+    for d in data:
+        print(d)
+        try:
+            photos = d['photos']
+            photos = eval(photos)
+            for photo in photos:
+                if photo and photo != '' and len(photo) > 0:
+                    url = photo.get('url')
+                    url_list.append(url)
+        finally:
+            continue
+    print(list(set(url_list)))
+
+
+
 if __name__ == "__main__":
-    print("{},{},{}".format(bp_index, mini_batch, n))
-    main()
+    with open('tempp.txt', encoding='utf-8') as f:
+        txt = f.readline()
+
+    format_url_for_photos(txt)
