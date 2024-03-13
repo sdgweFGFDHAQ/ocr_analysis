@@ -45,7 +45,7 @@ def download_data():
         # 保存为 CSV 文件 该数据是di_store未分类的数据，用于ocr规则分类
         file_name = f'di_store_unclassified_data_{file_index}.csv'
         df.to_csv(prefix_path + file_name, index=False)
-        print("数据保存到文件".format(file_index))
+        print("数据保存到文件{}".format(file_index))
 
         file_index += 1
 

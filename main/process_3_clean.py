@@ -4,25 +4,31 @@
 # @Author  : LC
 # @File    : ocr_clear.py
 # @Software: PyCharm
+"""
+linux 4090
+用于清洗ocr文本，提取实体词汇
+"""
 import json
 import time
-from time import sleep
 
-import numpy as np
 import pandas as pd
 from tqdm import tqdm
-import unicodedata
 
 pd.set_option('mode.chained_assignment', None)
 
-prefix_path = '/home/DI/zhouzx/code/ocr_analysis'
+prefix_path = "/home/DI/zhouzx/code/ocr_analysis"
+data_path = prefix_path + "/main/datasets/"
 
+# 噪声词集
 namenoise = {}
-f = open(prefix_path + '/resources/noisewords.txt', encoding='GBK')
-for temp in f:
-    if temp[-1] == '\n': temp = temp[:-1]
-    namenoise[temp] = 1
-f.close()
+with open(prefix_path + '/resources/noisewords.txt', encoding='GBK') as file:
+    for noise_word in file:
+        noise_word = noise_word.rstrip('\n')
+        namenoise[noise_word] = 1
+# 实体词集
+entity_words_path = prefix_path + '/resources/artificial_entity.txt'
+
+batch_number = 1  # 控制批量数据集的文件数量
 
 
 def clean_f(row):
@@ -66,9 +72,6 @@ def is_same_word(word1, word2):
     return False
 
 
-entity_words_path = prefix_path + '/resources/artificial_entity.txt'
-
-
 # 0.从共享文件获取人工辨别的实体词汇，更新到artificial_entity.txt词集
 def update_entity_words(is_clear=False):
     print("==start:update_entity_words()==")
@@ -98,38 +101,39 @@ def update_entity_words(is_clear=False):
 
 # 去除噪声词的核心逻辑代码
 def oc_process_row(row):
-    ocr_storefront_words = row['ocr_storefront_words']
-    ocr_words = row['ocr_words']
+    ocr_front_text = row['ocr_front_text']
+    ocr_inside_text = row['ocr_inside_text']
 
-    if pd.notna(ocr_storefront_words) and pd.notna(ocr_words):
-        ocr_words = ocr_storefront_words.split(' ') + ocr_words.split(' ')
-    elif pd.notna(ocr_storefront_words):
-        ocr_words = ocr_storefront_words.split(' ')
-    elif pd.notna(ocr_words):
-        ocr_words = ocr_words.split(' ')
+    if pd.notna(ocr_front_text) and pd.notna(ocr_inside_text):
+        ocr_word = ocr_front_text.split(' ') + ocr_inside_text.split(' ')
+    elif pd.notna(ocr_front_text):
+        ocr_word = ocr_front_text.split(' ')
+    elif pd.notna(ocr_inside_text):
+        ocr_word = ocr_inside_text.split(' ')
     else:
         return ''
 
-    ocr_words = list(set(ocr_words))
-    ocr_words = [word for word in ocr_words if not any(noise in word for noise in namenoise)]
-    return ' '.join(ocr_words)
+    ocr_word = list(set(ocr_word))
+    new_ocr_word = [word for word in ocr_word if not any(noise in word for noise in namenoise)]
+    return ' '.join(new_ocr_word)
 
 
 # 1. 去除噪声词
-def ocr_clear(file_path='', save_path=''):
+def ocr_clear(file_path=data_path + '/ocr_10w0-front_ocr.csv', save_path=data_path + '/ocr_10w0-front_ocr_clean.xlsx'):
     """
     clear的目标字段:
-        ocr_storefront_words,店面文本
-        ocr_words,店内文本
+        ocr_front_text,店面文本
+        ocr_inside_text,店内文本
     """
     start0 = time.time()
     print("==start:ocr_clear()==")
 
     for batch_num in range(batch_number):
         if batch_number == 1:
-            pd_file = pd.read_csv(prefix_path + '/main/data_sets' + file_path)
+            pd_file = pd.read_csv(file_path)
         else:
-            pd_file = pd.read_csv(prefix_path + '/main/data_sets/10w' + str(batch_num) + '_data_result.csv')
+            pd_file = pd.read_csv(
+                prefix_path + '/main/data_sets/di_store_unclassified_data_' + str(batch_num) + '_ocr.csv')
 
         # --核心逻辑代码
         # url数据被格式为front_path,inside_path
@@ -139,10 +143,11 @@ def ocr_clear(file_path='', save_path=''):
         print("1.ocr文本去噪清洗，ocr_clear不为空的数据量为：", pd_file.shape[0])
         pd_file['id'] = pd_file['id'].astype(str)
         if batch_number == 1:
-            pd_file.to_excel(prefix_path + '/main/data_sets' + save_path, index=False)
+            pd_file.to_excel(save_path, index=False)
         else:
             # res.to_csv(prefix_path + '/main/data_sets/10w' + str(batch_num) + '_clean_data.csv', index=False)
-            pd_file.to_excel(prefix_path + '/main/data_sets/10w' + str(batch_num) + '_clean_data.xlsx', index=False)
+            pd_file.to_excel(prefix_path + '/main/data_sets/di_store_unclassified_data_' + str(batch_num) + '_ocr.xlsx',
+                             index=False)
         print("==end:ocr_clear()==")
         end0 = time.time()
         print("1.ocr文本去噪清洗 执行结束所需 time: {} minutes".format((end0 - start0) / 60))
@@ -172,7 +177,8 @@ def ca_process_row(row, entity_list, word_frequency, sample):
 
 
 # 2.利用该词集进一步清洗字段ocr_clear，并把匹配到的词保留在新字段ocr_entity
-def clear_again(file_path='', save_path=''):
+def clear_again(file_path=data_path + '/ocr_10w0-front_ocr_clean.xlsx',
+                save_path=data_path + '/ocr_10w0-front_ocr_clean.xlsx'):
     start0 = time.time()
     print("==start:clear_again()==")
 
@@ -190,9 +196,11 @@ def clear_again(file_path='', save_path=''):
 
     for batch_num in range(batch_number):
         if batch_number == 1:
-            df = pd.read_excel(prefix_path + '/main/data_sets/' + file_path, sheet_name=0)
+            df = pd.read_excel(file_path, sheet_name=0)
         else:
-            df = pd.read_excel(prefix_path + '/main/data_sets/10w' + str(batch_num) + '_clean_data.xlsx', sheet_name=0)
+            df = pd.read_excel(
+                prefix_path + '/main/data_sets/di_store_unclassified_data_' + str(batch_num) + '_ocr.xlsx',
+                sheet_name=0)
 
         # --核心逻辑代码
         df['ocr_entity'] = df.apply(ca_process_row, args=(entity_list, word_frequency, sample), axis=1)
@@ -200,10 +208,11 @@ def clear_again(file_path='', save_path=''):
         # 输出提取文本的数据
         df['id'] = df['id'].astype(str)
         if batch_number == 1:
-            df.to_excel(prefix_path + '/main/data_sets/' + save_path, index=False)
+            df.to_excel(save_path, index=False)
         else:
             # df.to_csv(prefix_path + '/main/data_sets/10w' + str(batch_num) + '_clean_data.csv', index=False)
-            df.to_excel(prefix_path + '/main/data_sets/10w' + str(batch_num) + '_clean_data.xlsx', index=False)
+            df.to_excel(prefix_path + '/main/data_sets/di_store_unclassified_data_' + str(batch_num) + '_ocr.xlsx',
+                        index=False)
 
     end0 = time.time()
     print("==end:clear_again()==")
@@ -216,22 +225,21 @@ def clear_again(file_path='', save_path=''):
     print("词频输出完成")
 
 
-batch_number = 1  # 控制批量数据集的文件数量
-
-
 # ocr清洗 整体流程
 def run_ocr_clean(is_iterate=False):
     # 0.迭代
     if is_iterate:
         update_entity_words()
     # 1.去噪
-    ocr_clear(file_path='/ocr_10w0-front_ocr.csv',
-              save_path='/ocr_10w0-front_ocr_clean.xlsx')
+    ocr_clear(
+        file_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_unclassified_data_1_ocr.csv',
+        save_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_uc_data_1_clean.xlsx')
     # 2.提取实体
-    clear_again(file_path='/ocr_10w0-front_ocr_clean.xlsx',
-                save_path='/ocr_10w0-front_ocr_clean.xlsx')
+    clear_again(
+        file_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_uc_data_1_clean.xlsx',
+        save_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_uc_data_1_clean.xlsx')
 
 
 if __name__ == '__main__':
     run_ocr_clean()
-# nohup python -u process2.py > process2.log 2>&1 &
+# nohup python -u process_3_clean.py > process2.log 2>&1 &
