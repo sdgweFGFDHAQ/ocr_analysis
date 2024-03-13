@@ -27,6 +27,9 @@ from PIL import Image, ImageFilter, ImageEnhance
 
 from paddleocr import PaddleOCR
 
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # 获取GPU设备，不使用GPU时注释
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 设置GPU编号，不使用GPU时注释
+
 logging.disable(logging.DEBUG)
 pd.options.mode.chained_assignment = None
 
@@ -59,6 +62,8 @@ data = pd.read_csv('/home/DI/zhouzx/code/ocr_analysis/main/data_sets/fs_drink_sk
                             'flavored', 'tea', 'carbonated', 'coffee', 'water', 'special_uses', 'plant_clean',
                             'fruit_vegetable_clean', 'protein_clean', 'flavored_clean', 'tea_clean', 'carbonated_clean',
                             'coffee_clean', 'water_clean', 'special_uses_clean', 'photos', 'filepath'])
+
+
 # data = pd.read_csv('/home/data/temp/zhouzx/ocr_analysis/main/data_sets/ocr_10w0.csv',
 #                    usecols=['id', 'name', 'category1_new', 'photos', 'filepath'])
 
@@ -106,15 +111,17 @@ def format_url_for_filepath(row):
 
 def ocr_word(image):
     txts = []
-    try:
-        p_ocr = PaddleOCR(use_angle_cls=True, lang="ch", use_gpu=False, cpu_threads=8)
-        result = p_ocr.ocr(image, cls=True)
-        # result = result[0]
-        txts = [line[1][0] for line in result]
-    except Exception as e:
-        print('ocr_word() error!', e)
-    finally:
-        return txts
+    # try:
+    p_ocr = PaddleOCR(use_angle_cls=True, lang="ch", use_gpu=True, enable_mkldnn=True, cpu_threads=4, use_mp=True,
+                      total_process_num=4)
+
+    result = p_ocr.ocr(image, cls=True)
+    # result = result[0]
+    txts = [line[1][0] for line in result]
+    # except Exception as e:
+    #     print('ocr_word() error!', e)
+    # finally:
+    return txts
 
 
 def recognition(image):
@@ -307,21 +314,21 @@ def res_ssl(file_path=default_check_path, photos='photos', filepath='filepath', 
             photos_list = literal_eval(row[photos])
             if len(photos_list) > 0:
                 for pici in photos_list:
-                    try:
-                        photos_text = process_image(pici, name_st)
-                        front_text.extend(photos_text)
-                    finally:
-                        continue
+                    # try:
+                    photos_text = process_image(pici, name_st)
+                    front_text.extend(photos_text)
+                    # finally:
+                    #     continue
         if filepath in row.index:
             # filepath_list = format_url_for_filepath(row[filepath])
             filepath_list = literal_eval(row[filepath])
             if len(filepath_list) > 0:
                 for pici in filepath_list:
-                    try:
-                        filepath_text = process_image(pici, name_st)
-                        inside_text.extend(filepath_text)
-                    finally:
-                        continue
+                    # try:
+                    filepath_text = process_image(pici, name_st)
+                    inside_text.extend(filepath_text)
+                    # finally:
+                    #     continue
 
         # 对ocr结果初步处理
         new_front_text = ocr_clear(front_text)
@@ -335,10 +342,10 @@ def res_ssl(file_path=default_check_path, photos='photos', filepath='filepath', 
             row.to_frame().transpose().to_csv(save_path, mode='w', index=False)
 
     # 把csv文件转为xlsx
-    new_save_path = save_path.replace('.csv', '.xlsx')
-    csv = pd.read_csv(save_path, index_col=0)
-    csv['id'] = csv['id'].astype(str)
-    csv.to_excel(new_save_path)
+    # new_save_path = save_path.replace('.csv', '.xlsx')
+    # csv = pd.read_csv(save_path, index_col=0)
+    # csv['id'] = csv['id'].astype(str)
+    # csv.to_excel(new_save_path)
     end0 = time.time()
     print('该batch执行结束 time: {} minutes'.format((end0 - start0) / 60))
 
@@ -347,8 +354,8 @@ if __name__ == '__main__':
     # 对url重新分组，店面照为列front_path，店内照为列inside_path
     # multi_process_check_photo(save_path='/home/data/temp/zhouzx/ocr_analysis/main/data_sets/ocr_10w0-front.csv')
     # ocr
-    res_ssl(file_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/ocr_10w0-front.csv',
+    res_ssl(file_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/fs_drink_sku_data_temp.csv',
             photos='front_path', filepath='inside_path',
-            save_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/ocr_10w0-front_ocr.csv')
+            save_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/temp.csv')
 
 # nohup python -u process1.py > process1.log 2>&1 &
