@@ -79,13 +79,16 @@ def format_url_for_filepath(row):
     if str(row) == 'None' or pd.isnull(row):
         return url_list
     row = row.replace('\\"', '\'')
-    data = json.loads(row)
-    for d in data:
-        photos = d['filepath']
-        # photos = eval(photos)
-        if photos != '':
-            # url = photos[0].get('url')
-            url_list.append(photos)
+    # 1 特定格式的处理
+    # url_data = json.loads(row)
+    # for d in url_data:
+    #     photos = d['filepath']
+    #     # photos = eval(photos)
+    #     if photos != '':
+    #         # url = photos[0].get('url')
+    #         url_list.append(photos)
+    # 1 特定格式的处理
+    url_list.append(row)
     return url_list
 
 
@@ -118,7 +121,7 @@ def recognition(image):
 # 判断图片是否是店面照 只能走本地ip 放在华为云服务器
 def check_photo(row_index):
     process_id = os.getpid()
-    name_st = r'pic_ocr/picture_' + str(process_id) + '.jpg'
+    name_st = prefix_path + 'pic_ocr/picture_' + str(process_id) + '.jpg'
     # 把图片字段(photos、filepath)的url合并为一个list
     image_url_list = []
     row = data.loc[row_index]
