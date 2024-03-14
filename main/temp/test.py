@@ -1,4 +1,5 @@
 import argparse
+import ast
 import json
 import time
 import random
@@ -36,22 +37,18 @@ def main():
 
 def format_url_for_photos(txt):
     url_list = []
-    row = txt.replace('\\"', '\'')
-    data = json.loads(row)
+    print(txt)
+    data = ast.literal_eval(txt)
     print(data)
-    for d in data:
-        print(d)
-        try:
-            photos = d['photos']
-            photos = eval(photos)
-            for photo in photos:
-                if photo and photo != '' and len(photo) > 0:
-                    url = photo.get('url')
-                    url_list.append(url)
-        finally:
-            continue
-    print(list(set(url_list)))
 
+    for photo in data:
+        try:
+            if photo and photo != '' and len(photo) > 0:
+                url = photo.get('url')
+                url_list.append(url)
+        except Exception as e:
+            print("url格式解析出错！")
+    print(list(set(url_list)))
 
 
 if __name__ == "__main__":
