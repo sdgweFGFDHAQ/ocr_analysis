@@ -201,8 +201,8 @@ def res_ssl(file_path=default_check_path, photos='photos', filepath='filepath', 
 
 if __name__ == '__main__':
     # ocr
-    res_ssl(file_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_unclassified_data_2.csv',
+    res_ssl(file_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_unclassified_data_1.csv',
             # photos='front_path', filepath='inside_path',
-            save_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_unclassified_data_2_ocr.csv')
+            save_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_unclassified_data_1_ocr.csv')
 
 # nohup python -u process1.py > process1.log 2>&1 &

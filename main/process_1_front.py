@@ -16,6 +16,7 @@ import logging
 import os
 import shutil
 import time
+from ast import literal_eval
 from multiprocessing import Pool, Manager
 
 import pandas as pd
@@ -25,70 +26,90 @@ from tqdm import tqdm
 logging.disable(logging.DEBUG)
 pd.options.mode.chained_assignment = None
 
-parser = argparse.ArgumentParser()
-# linux有内存溢出问题，使用该变量
-parser.add_argument("--breakpoint_index", type=int, default=0)
-parser.add_argument("--mini_batch", type=int, default=5000)
-parser.add_argument("--batch_num", type=int, default=0)
-args = parser.parse_args()
-breakpoint_index = args.breakpoint_index
-mini_batch = args.mini_batch
-batch_num = args.batch_num
-
 prefix_path = "/home/data/temp/zhouzx/ocr_analysis/main"
 data_path = prefix_path + "/data_sets/di_store"
-default_file_path = data_path + '/di_store_unclassified_data_' + str(batch_num) + '.csv'
-default_check_path = data_path + '/di_store_unclassified_data_' + str(batch_num) + '_front.csv'
+
+default_file_path = data_path + '/di_store_unclassified_data_1.csv'
+default_check_path = data_path + '/di_store_unclassified_data_1_front.csv'
+
 re_url = "http://192.168.0.112:9091/imageprocess/signboard"  # 华为云
 
 # re_url = "http://139.9.49.41:9091/imageprocess/signboard"
 
 # df对象 ocr规则分类
-data = pd.read_csv(default_file_path,
+df_data = pd.read_csv(default_file_path,
                    usecols=['id', 'name', 'state', 'address', 'appcode', 'visit_num_6m', 'photos', 'filepath'])
 
 
 # df对象 品类打标
-# data = pd.read_csv(default_file_path,
+# df_data = pd.read_csv(default_file_path,
 #                    usecols=['id', 'name', 'storetype', 'drink_labels', 'plant', 'fruit_vegetable', 'protein',
 #                             'flavored', 'tea', 'carbonated', 'coffee', 'water', 'special_uses', 'plant_clean',
 #                             'fruit_vegetable_clean', 'protein_clean', 'flavored_clean', 'tea_clean', 'carbonated_clean',
 #                             'coffee_clean', 'water_clean', 'special_uses_clean', 'photos', 'filepath'])
 
+# def format_url_for_photos(row):
+#     url_list = []
+#     if str(row) == 'None' or pd.isnull(row):
+#         return url_list
+#     row = row.replace('\\"', '\'')
+#     data = json.loads(row)
+#     for d in data:
+#         try:
+#             photos = d['photos']
+#             photos = eval(photos)
+#             for photo in photos:
+#                 if photo and photo != '' and len(photo) > 0:
+#                     url = photo.get('url')
+#                     url_list.append(url)
+#         finally:
+#             continue
+#     return url_list
+# 针对不同数据格式进行修改
 def format_url_for_photos(row):
     url_list = []
     if str(row) == 'None' or pd.isnull(row):
         return url_list
-    row = row.replace('\\"', '\'')
-    data = json.loads(row)
-    for d in data:
-        try:
-            photos = d['photos']
-            photos = eval(photos)
-            for photo in photos:
-                if photo and photo != '' and len(photo) > 0:
-                    url = photo.get('url')
+    data = literal_eval(row)
+    for photo_dict in data:
+        if photo_dict and len(photo_dict) > 0:
+            try:
+                url = photo_dict.get('url')
+                if photo_dict and photo_dict != '' and len(photo_dict) > 0:
                     url_list.append(url)
-        finally:
-            continue
+            except Exception as e:
+                print("url格式解析出错！")
     return url_list
 
 
+# def format_url_for_filepath(row):
+#     url_list = []
+#     if str(row) == 'None' or pd.isnull(row):
+#         return url_list
+#     row = row.replace('\\"', '\'')
+#     # 1 特定格式的处理
+#     # url_data = json.loads(row)
+#     # for d in url_data:
+#     #     photos = d['filepath']
+#     #     # photos = eval(photos)
+#     #     if photos != '':
+#     #         # url = photos[0].get('url')
+#     #         url_list.append(photos)
+#     # 1 特定格式的处理
+#     url_list.append(row)
+#     return url_list
+# 针对不同数据格式进行修改
 def format_url_for_filepath(row):
     url_list = []
     if str(row) == 'None' or pd.isnull(row):
         return url_list
-    row = row.replace('\\"', '\'')
-    # 1 特定格式的处理
-    # url_data = json.loads(row)
-    # for d in url_data:
-    #     photos = d['filepath']
-    #     # photos = eval(photos)
-    #     if photos != '':
-    #         # url = photos[0].get('url')
-    #         url_list.append(photos)
-    # 1 特定格式的处理
-    url_list.append(row)
+    pici = row.replace('\\"', '\'')
+
+    if pici.split('//')[0] == 'https:' or pici.split('//')[0] == 'http:':
+        image_url = pici
+    else:
+        image_url = 'https://' + pici
+    url_list.append(image_url)
     return url_list
 
 
@@ -124,7 +145,7 @@ def check_photo(row_index):
     name_st = prefix_path + 'pic_ocr/picture_' + str(process_id) + '.jpg'
     # 把图片字段(photos、filepath)的url合并为一个list
     image_url_list = []
-    row = data.loc[row_index]
+    row = df_data.loc[row_index]
     # 清洗URL格式
     if 'photos' in row.index:
         photos_list = format_url_for_photos(row['photos'])
@@ -179,7 +200,7 @@ manager = Manager()
 rows_to_save = manager.list()
 
 
-def multi_process_check_photo(save_path=default_check_path):
+def multi_process_check_photo(file_path=default_file_path, save_path=default_check_path):
     # 清空存储图片的文件夹
     folder_path = prefix_path + '/pic_ocr'
     if os.path.exists(folder_path):
@@ -188,15 +209,15 @@ def multi_process_check_photo(save_path=default_check_path):
 
     start0 = time.time()
     print('===开始判断是否为店面照===')
-    print("输入数据量：", data.shape[0])
+    print("输入数据量：", df_data.shape[0])
     # 简单过滤
-    data_df = data[(~data['photos'].isnull()) | (~data['filepath'].isnull())]
-    print("过滤photos和filepath同时为空的数据，剩余的数据量：", data_df.shape[0])
+    new_data_df = df_data[(~df_data['photos'].isnull()) | (~df_data['filepath'].isnull())]
+    print("过滤photos和filepath同时为空的数据，剩余的数据量：", new_data_df.shape[0])
 
     with Pool(5) as pool:
         # 使用进程池并行处理每一行
-        count = pool.imap(check_photo, data_df.index)
-        for _ in tqdm(count, total=len(data_df)):
+        count = pool.imap(check_photo, new_data_df.index)
+        for _ in tqdm(count, total=len(new_data_df)):
             pass
     df_to_save = pd.DataFrame.from_records(rows_to_save)
     df_to_save['id'] = df_to_save['id'].astype(str)
@@ -209,6 +230,7 @@ def multi_process_check_photo(save_path=default_check_path):
 if __name__ == '__main__':
     # 对url重新分组，店面照为列front_path，店内照为列inside_path
     multi_process_check_photo(
-        save_path='/home/data/temp/zhouzx/ocr_analysis/main/data_sets/di_store/di_store_unclassified_data_1.csv')
+        file_path='/home/data/temp/zhouzx/ocr_analysis/main/data_sets/di_store/di_store_unclassified_data_3.csv',
+        save_path='/home/data/temp/zhouzx/ocr_analysis/main/data_sets/di_store/di_store_unclassified_data_3_front.csv')
 
 # nohup python -u process_1_front.py > process_1_front.log 2>&1 &
