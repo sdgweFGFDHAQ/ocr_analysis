@@ -1,14 +1,15 @@
 # !/usr/bin/env python
 # -*- coding: utf-8 -*-
 # @Time    : 2024/1/4 10:49
-# @Author  : LC
-# @File    : ocr_clean.py
+# @Author  : ZZX
+# @File    : process_3_clean.py
 # @Software: PyCharm
 """
 linux 4090
 用于清洗ocr文本，提取实体词汇
 """
 import json
+import re
 import time
 
 import pandas as pd
@@ -33,21 +34,14 @@ columns = ['id', 'name', 'photos', 'filepath', 'ocr_front_text', 'ocr_inside_tex
 save_columns = ['id', 'name', 'photos', 'filepath', 'ocr_clean']  # 需要保留的字段
 
 
-def clean_f(row):
-    url_list = []
-    if str(row) == 'None':
-        return url_list
-    row = row.replace('\\"', '\'')
-    data = json.loads(row)
-    for d in data:
-        photos = d['filepath']
-        # photos = eval(photos)
-        if photos != '':
-            # url = photos[0].get('url')
-            url_list.append(photos)
-    return url_list
+# 去除 , ， ! ！等字符
+def clean_text(text):
+    # 使用正则表达式保留中英文字符
+    cleaned_text = re.sub(r"[^a-zA-Z\u4e00-\u9fa5]", " ", text)
+    return cleaned_text
 
 
+# 提取店名
 def is_same_word(word1, word2):
     dic1 = {}
     num = 0
@@ -116,12 +110,15 @@ def oc_process_row(row):
         return ''
 
     ocr_word = list(set(ocr_word))
+    # 模糊匹配噪声，如电话、对联
     new_ocr_word = [word for word in ocr_word if not any(noise in word for noise in namenoise)]
+    # 去除标点符号
+    new_ocr_word = [clean_text(word) for word in new_ocr_word]
     return ' '.join(new_ocr_word)
 
 
 # 1. 去除噪声词
-def ocr_clean(file_path=data_path + '/ocr_10w0-front_ocr.csv', save_path=data_path + '/ocr_10w0-front_ocr_clean.xlsx'):
+def ocr_clean(file_path=data_path + '/ocr_10w0-front_ocr.csv', save_path=data_path + '/ocr_10w0-front_ocr_clean.csv'):
     """
     clear的目标字段:
         ocr_front_text,店面文本
@@ -137,18 +134,24 @@ def ocr_clean(file_path=data_path + '/ocr_10w0-front_ocr.csv', save_path=data_pa
             pd_file = pd.read_csv(
                 prefix_path + '/main/data_sets/di_store_unclassified_data_' + str(batch_num) + '_ocr.csv')
 
+        # 先去个重先
+        pd_file = pd_file.drop_duplicates()
+        print("0.ocr文本去噪清洗，有效数据的数据量为：", pd_file.shape[0])
         # --核心逻辑代码
-        # url数据被格式为front_path,inside_path
+        # url数据被格式化为front_path,inside_path
         pd_file['ocr_clean'] = pd_file.apply(oc_process_row, axis=1)
 
         pd_file = pd_file[pd_file['ocr_clean'].notna() & (pd_file['ocr_clean'] != '')]
         print("1.ocr文本去噪清洗，ocr_clean不为空的数据量为：", pd_file.shape[0])
         pd_file['id'] = pd_file['id'].astype(str)
         if batch_number == 1:
-            pd_file[save_columns].to_excel(save_path, index=False)
+            pd_file[save_columns].to_csv(save_path, index=False)
+            # pd_file[save_columns].to_excel(save_path, index=False)
         else:
-            pd_file[save_columns].to_excel(
-                prefix_path + '/main/data_sets/di_store_uc_data_' + str(batch_num) + '_ocr.xlsx', index=False)
+            pd_file[save_columns].to_csv(
+                prefix_path + '/main/data_sets/di_store_uc_data_' + str(batch_num) + '_ocr.csv', index=False)
+            # pd_file[save_columns].to_excel(
+            #     prefix_path + '/main/data_sets/di_store_uc_data_' + str(batch_num) + '_ocr.xlsx', index=False)
         print("==end:ocr_clean()==")
         end0 = time.time()
         print("1.ocr文本去噪清洗 执行结束所需 time: {} minutes".format((end0 - start0) / 60))
@@ -178,7 +181,7 @@ def ca_process_row(row, entity_list, word_frequency, sample):
 
 
 # 2.利用该词集进一步清洗字段ocr_clean，并把匹配到的词保留在新字段ocr_entity
-def clear_again(file_path=data_path + '/ocr_10w0-front_ocr_clean.xlsx',
+def clear_again(file_path=data_path + '/ocr_10w0-front_ocr_clean.csv',
                 save_path=data_path + '/ocr_10w0-front_ocr_clean.xlsx'):
     start0 = time.time()
     print("==start:clear_again()==")
@@ -197,10 +200,13 @@ def clear_again(file_path=data_path + '/ocr_10w0-front_ocr_clean.xlsx',
 
     for batch_num in range(batch_number):
         if batch_number == 1:
-            df = pd.read_excel(file_path, sheet_name=0)
+            df = pd.read_csv(file_path)
+            # df = pd.read_excel(file_path, sheet_name=0)
         else:
-            df = pd.read_excel(
-                prefix_path + '/main/data_sets/di_store_uc_data_' + str(batch_num) + '_ocr.xlsx', sheet_name=0)
+            df = pd.read_csv(
+                prefix_path + '/main/data_sets/di_store_uc_data_' + str(batch_num) + '_ocr.csv')
+            # df = pd.read_excel(
+            #     prefix_path + '/main/data_sets/di_store_uc_data_' + str(batch_num) + '_ocr.xlsx', sheet_name=0)
 
         # --核心逻辑代码
         df['ocr_entity'] = df.apply(ca_process_row, args=(entity_list, word_frequency, sample), axis=1)
@@ -227,16 +233,23 @@ def clear_again(file_path=data_path + '/ocr_10w0-front_ocr_clean.xlsx',
 # ocr清洗 整体流程
 def run_ocr_clean(is_iterate=False):
     # 0.迭代
-    if is_iterate:
-        update_entity_words()
-    # 1.去噪
-    ocr_clean(
-        file_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_unclassified_data_1_ocr.csv',
-        save_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_uc_data_1_clean.xlsx')
-    # 2.提取实体
-    clear_again(
-        file_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_uc_data_1_clean.xlsx',
-        save_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_uc_data_1_clean.xlsx')
+    # if is_iterate:
+    #     update_entity_words()
+
+    for i in [1, 3]:
+        # 1.去噪
+        print("=======数据文件编号[{0}]=========".format(i))
+        ocr_clean(
+            file_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_unclassified_data_{}_ocr.csv'
+            .format(i),
+            save_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_uc_data_{}_clean.csv'
+            .format(i))
+        # 2.提取实体
+        # clear_again(
+        #     file_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_uc_data_{}_clean.csv'
+        #     .format(i),
+        #     save_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_uc_data_{}_clean.xlsx'
+        #     .format(i))
 
 
 if __name__ == '__main__':

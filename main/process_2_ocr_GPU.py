@@ -1,8 +1,8 @@
 # !/usr/bin/env python
 # -*- coding: utf-8 -*-
 # @Time    : 2024/1/3 18:22
-# @Author  : ZZX
-# @File    : process_2_ocr.py
+# @Author  : LC
+# @File    : process1.py
 # @Software: PyCharm
 # coding=gbk
 """
@@ -23,7 +23,9 @@ import unicodedata
 from PIL import Image, ImageFilter, ImageEnhance
 
 from paddleocr import PaddleOCR
-from requests import RequestException
+
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # 获取GPU设备，不使用GPU时注释
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 设置GPU编号，不使用GPU时注释
 
 logging.disable(logging.DEBUG)
 pd.options.mode.chained_assignment = None
@@ -58,15 +60,16 @@ def change_pic(name_st1):
 
 def ocr_word(image):
     txts = []
-    try:
-        p_ocr = PaddleOCR(use_angle_cls=True, lang="ch", use_gpu=False, use_mp=True,
-                          enable_mkldnn=True, cpu_threads=10, total_process_num=10)
+    # try:
+    p_ocr = PaddleOCR(use_angle_cls=True, lang="ch", use_gpu=True, gpu_id=0, use_mp=True, mp_workers=4,
+                      enable_mkldnn=True, cpu_threads=10, total_process_num=10)
 
-        result = p_ocr.ocr(image, cls=True)
-        # result = result[0]
-        txts = [line[1][0] for line in result]
-    except Exception as e:
-        print('ocr_word() error!', e)
+    result = p_ocr.ocr(image, cls=True)
+    # result = result[0]
+    txts = [line[1][0] for line in result]
+    # except Exception as e:
+    #     print('ocr_word() error!', e)
+    # finally:
     return txts
 
 
@@ -89,10 +92,9 @@ def process_image(url, photo_file):
             # 提取文本
             ocr_text += ocr_word(prefix_path + "/pic_ocr/ruihua.jpg")
 
-    except RequestException as e:
-        print(f"{url} 请求返回异常:{e}，跳过")
-    except OSError as e:
-        print(f"{url}图片格式出现异常:{e}")
+    except requests.exceptions.RequestException as e:
+        print(f"{url} 请求返回错误:{e}，跳过")
+
     return ocr_text
 
 
@@ -112,62 +114,34 @@ def ocr_clear(ocr_list):
 
 
 # 针对不同数据格式进行修改
-def format_url_for_front(row):
+def format_url_for_photos(row):
     url_list = []
-
     if str(row) == 'None' or pd.isnull(row):
         return url_list
-
-    row = row.replace('\\"', '\'')
-    row = literal_eval(row)
-    if isinstance(row, str):
-        row = [row]  # 变成list
-
-    if isinstance(row, list):
-        for url in row:
-            if url.split('//')[0] == 'https:' or url.split('//')[0] == 'http:':
-                image_url = url
-            else:
-                spot_num = len(url.split('.')) - 1  # url中小数点的数量
-                if spot_num == 1:
-                    image_url = 'http://mvs.wljhealth.net:9000/defaultBucket/' + url
-                elif spot_num == 0:
-                    image_url = 'http://mvs.wljhealth.net:9000/defaultBucket/' + url + '.jpg'
-                else:
-                    image_url = 'https://' + url
-            url_list.append(image_url)
-    else:
-        print("photos图片字段的格式必须是str或list:", row)
+    data = literal_eval(row)
+    for photo_dict in data:
+        if photo_dict and len(photo_dict) > 0:
+            try:
+                url = photo_dict.get('url')
+                if photo_dict and photo_dict != '' and len(photo_dict) > 0:
+                    url_list.append(url)
+            except Exception as e:
+                print("url格式解析出错！")
     return url_list
 
 
 # 针对不同数据格式进行修改
-def format_url_for_inside(row):
+def format_url_for_filepath(row):
     url_list = []
-
     if str(row) == 'None' or pd.isnull(row):
         return url_list
+    pici = row.replace('\\"', '\'')
 
-    row = row.replace('\\"', '\'')
-    row = eval(row)
-    if isinstance(row, str):
-        row = [row]  # 变成list
-
-    if isinstance(row, list):
-        for url in row:
-            if url.split('//')[0] == 'https:' or url.split('//')[0] == 'http:':
-                image_url = url
-            else:
-                spot_num = len(url.split('.')) - 1  # url中小数点的数量
-                if spot_num == 1:
-                    image_url = 'http://mvs.wljhealth.net:9000/defaultBucket/' + url
-                elif spot_num == 0:
-                    image_url = 'http://mvs.wljhealth.net:9000/defaultBucket/' + url + '.jpg'
-                else:
-                    image_url = 'https://' + url
-            url_list.append(image_url)
+    if pici.split('//')[0] == 'https:' or pici.split('//')[0] == 'http:':
+        image_url = pici
     else:
-        print("filepath图片字段的格式必须是str或list:", row)
+        image_url = 'https://' + pici
+    url_list.append(image_url)
     return url_list
 
 
@@ -193,7 +167,7 @@ def res_ssl(file_path=default_check_path, photos='photos', filepath='filepath', 
         name_st = prefix_path + '/pic_ocr/picture.jpg'
         # 清洗URL格式
         if photos in row.index:
-            photos_list = format_url_for_front(row[photos])  # ++++++++++++++++++++++++++++
+            photos_list = format_url_for_photos(row[photos])  # ++++++++++++++++++++++++++++
             # photos_list = literal_eval(row[photos])
             if len(photos_list) > 0:
                 for pici in photos_list:
@@ -203,7 +177,7 @@ def res_ssl(file_path=default_check_path, photos='photos', filepath='filepath', 
                     finally:
                         pass
         if filepath in row.index:
-            filepath_list = format_url_for_inside(row[filepath])  # ++++++++++++++++++++++++++++
+            filepath_list = format_url_for_filepath(row[filepath])  # ++++++++++++++++++++++++++++
             # filepath_list = literal_eval(row[filepath])
             if len(filepath_list) > 0:
                 for pici in filepath_list:
@@ -233,6 +207,8 @@ def res_ssl(file_path=default_check_path, photos='photos', filepath='filepath', 
 
 if __name__ == '__main__':
     # ocr
-    res_ssl(photos='front_path', filepath='inside_path')
+    res_ssl(file_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_unclassified_data_2.csv',
+            # photos='front_path', filepath='inside_path',
+            save_path='/home/DI/zhouzx/code/ocr_analysis/main/data_sets/di_store/di_store_unclassified_data_2_ocr.csv')
 
 # nohup python -u process1.py > process1.log 2>&1 &
