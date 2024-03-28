@@ -70,10 +70,19 @@ def ocr_word(image):
     return txts
 
 
+headers = {
+    "User-Agent": "Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)",
+    "tenantId": "dtcj",
+    "traceId": "dtcj",
+    "content-type": "application/json"
+}  # 请求头
+
+
 def process_image(url, photo_file):
     ocr_text = []
     try:
-        response = requests.get(url)
+
+        response = requests.get(url, headers=headers)
 
         if response.status_code == 200:
             with open(photo_file, 'wb') as f:
